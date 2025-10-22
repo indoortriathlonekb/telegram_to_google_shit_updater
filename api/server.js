@@ -9,7 +9,7 @@ app.use(express.json());
 const TELEGRAM_BOT_TOKEN = "8329496321:AAF3dF2dAc2yu1x3nFja_XyF0Y0VS0Dsi5k";
 const TELEGRAM_CHAT_ID = "@IndoorTriathlonRegistrations";
 const SHEETS_WEBHOOK =
-  "https://script.google.com/macros/s/AKfycbwCMIcWUOP_BYQYr3fpSIVxDwEq8KY3LvUldpDDc12b69wi70Yet2-x8X9wpDd-0AJpNA/exec";
+  "https://script.google.com/macros/s/AKfycbzw7grAXjMsULrBjRn-1m81cSCVQA7FIbYDoaCmbObQ-EuH04NMFfqE2eyBD4k_aH7piQ/exec";
 
 // Determine public base URL (Vercel sets this env automatically)
 const BASE_URL = process.env.VERCEL_URL
