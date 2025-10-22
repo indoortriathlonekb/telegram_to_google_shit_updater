@@ -1,64 +1,101 @@
-// server.js
-import TelegramBot from 'node-telegram-bot-api';
-import axios from 'axios';
+import express from "express";
+import axios from "axios";
 
+const app = express();
+app.use(express.json());
+
+// === 🔹 BOT CONFIG ===
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
-const GOOGLE_SHEET_WEBHOOK = process.env.GOOGLE_SCRIPT_URL
+const TELEGRAM_API = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}`;
 
-// Initialize bot (polling mode)
-const bot = new TelegramBot(TELEGRAM_BOT_TOKEN, { polling: true });
-
-console.log('🤖 Telegram bot started...');
-console.log(`📡 Watching chat: ${TELEGRAM_CHAT_ID}`);
-
-// Helper to send logs to console and Google Sheet
-async function forwardToSheet(message) {
+// === 🔹 Telegram sender ===
+async function sendTelegramMessage(text) {
   try {
-    const payload = {
-      telegramMessageId: message.message_id,
-      chatId: message.chat?.id,
-      chatTitle: message.chat?.title || message.chat?.username,
-      from: message.from?.username || `${message.from?.first_name || ''} ${message.from?.last_name || ''}`.trim(),
-      text: message.text || '(no text)',
-      date: new Date(message.date * 1000).toISOString(),
-      source: 'telegram'
-    };
-
-    console.log('📨 Forwarding message to Google Sheets:', payload);
-
-    await axios.post(GOOGLE_SHEET_WEBHOOK, payload, {
-      headers: { 'Content-Type': 'application/json' }
+    console.log("📨 Sending Telegram message...");
+    const res = await axios.post(`${TELEGRAM_API}/sendMessage`, {
+      chat_id: TELEGRAM_CHAT_ID,
+      text,
+      parse_mode: "HTML",
     });
-
-    console.log(`✅ Message from @${payload.from} saved to Sheets`);
-  } catch (err) {
-    console.error('❌ Error forwarding message to Sheets:', err.message);
+    console.log("✅ Message sent successfully:", res.data.result.message_id);
+    return { ok: true, data: res.data };
+  } catch (error) {
+    console.error("❌ Telegram send error:", error.response?.data || error.message);
+    return { ok: false, error: error.response?.data || error.message };
   }
 }
 
-// Listen for all messages
-bot.on('message', async (msg) => {
-  try {
-    const chatId = msg.chat.username ? `@${msg.chat.username}` : msg.chat.id;
+// === 🔹 Health Check ===
+app.get("/api/health", async (req, res) => {
+  console.log("🏥 Health check ping received.");
 
-    // Only handle messages from the configured chat
-    if (chatId === TELEGRAM_CHAT_ID) {
-      console.log(`💬 New message from ${chatId}:`, msg.text);
-      await forwardToSheet(msg);
-    } else {
-      console.log(`⚠️ Ignored message from other chat: ${chatId}`);
-    }
-  } catch (error) {
-    console.error('❌ Message handling error:', error.message);
+  try {
+    const response = await axios.get(`${TELEGRAM_API}/getMe`);
+    const botInfo = response.data.result;
+
+    res.json({
+      ok: true,
+      message: "Bot is healthy 💪",
+      bot: {
+        id: botInfo.id,
+        username: botInfo.username,
+        name: botInfo.first_name,
+      },
+      timestamp: new Date().toISOString(),
+    });
+  } catch (err) {
+    console.error("⚠️ Bot health check failed:", err.response?.data || err.message);
+    res.status(500).json({
+      ok: false,
+      message: "Bot health check failed",
+      error: err.response?.data || err.message,
+    });
   }
 });
 
-// Error handling
-bot.on('polling_error', (err) => {
-  console.error('🚨 Polling error:', err.message);
+// === 🔹 Test Send Endpoint ===
+app.post("/api/test-send", async (req, res) => {
+  console.log("📬 /api/test-send request received");
+
+  const testMessage = `------------------------
+📋 Новая регистрация
+👤 Иван Иванов
+🏙️ Город: Москва
+🏢 Клуб: Fast Swim
+📞 Телефон: 79261234567
+✉️ Email: ivan@example.com
+⚧ Пол: мужской
+🏁 Этапы:
+Этап 1
+💰 Сумма: 100 ₽
+🆔 Платеж: testpay123
+📌 Статус: Ожидает оплату
+📝 О себе: Тестовая регистрация
+🔢 Строка: 2
+------------------------`;
+
+  const result = await sendTelegramMessage(testMessage);
+  if (result.ok) {
+    res.json({ ok: true, message: "Test message sent ✅", result: result.data });
+  } else {
+    res.status(500).json({ ok: false, error: result.error });
+  }
 });
 
-process.on('unhandledRejection', (err) => {
-  console.error('🔥 Unhandled rejection:', err);
+// === 🔹 Root ===
+app.get("/", (req, res) => {
+  res.json({
+    service: "IndoorTriathlon Bot API",
+    status: "running",
+    endpoints: ["/api/health", "/api/test-send"],
+    time: new Date().toISOString(),
+  });
+});
+
+// === 🔹 Start Server ===
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`🔗 Health check: http://localhost:${PORT}/api/health`);
 });
