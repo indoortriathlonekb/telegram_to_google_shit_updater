@@ -11,17 +11,22 @@ const TELEGRAM_CHAT_ID = "@IndoorTriathlonRegistrations";
 const SHEETS_WEBHOOK =
   "https://script.google.com/macros/s/AKfycbwCMIcWUOP_BYQYr3fpSIVxDwEq8KY3LvUldpDDc12b69wi70Yet2-x8X9wpDd-0AJpNA/exec";
 
-let bot;
+const BASE_URL = process.env.VERCEL_URL
+  ? `https://${process.env.VERCEL_URL}`
+  : "https://your-vercel-app.vercel.app"; // replace locally if testing
 
-// === Initialize Telegram bot ===
+const bot = new TelegramBot(TELEGRAM_BOT_TOKEN, { webHook: true });
+const webhookUrl = `${BASE_URL}/webhook/${TELEGRAM_BOT_TOKEN}`;
+
+// === Register webhook with Telegram ===
 try {
-  bot = new TelegramBot(TELEGRAM_BOT_TOKEN, { polling: true });
-  console.log("🤖 Telegram bot started successfully.");
+  await bot.setWebHook(webhookUrl);
+  console.log(`🤖 Telegram bot webhook set to: ${webhookUrl}`);
 } catch (err) {
-  console.error("❌ Failed to initialize bot:", err.message);
+  console.error("❌ Failed to set webhook:", err.message);
 }
 
-// === Helper: Log to Google Sheets ===
+// === Helper: Log to Sheets ===
 async function logToSheets(step, details) {
   try {
     await axios.post(SHEETS_WEBHOOK, {
@@ -38,48 +43,53 @@ async function logToSheets(step, details) {
   }
 }
 
-// === Telegram message observer ===
-if (bot) {
-  bot.on("message", async (msg) => {
-    try {
-      if (!msg.chat || !msg.text) return;
-      if (msg.chat.username !== "IndoorTriathlonRegistrations" && msg.chat.title !== "IndoorTriathlonRegistrations") {
-        console.log("📭 Message ignored (not target group)");
-        return;
-      }
+// === Webhook endpoint for Telegram updates ===
+app.post(`/webhook/${TELEGRAM_BOT_TOKEN}`, async (req, res) => {
+  try {
+    const msg = req.body.message;
+    if (!msg || !msg.text) return res.sendStatus(200);
 
-      const messageText = msg.text.trim();
-      console.log(`📥 New group message: ${messageText}`);
+    console.log("📥 Telegram message:", msg.text);
 
-      // Send to Google Sheets webhook
-      const payload = {
-        lastName: "Telegram",
-        firstName: "User",
-        email: "from.telegram@bot",
-        paymentId: "tg-" + msg.message_id,
-        amount: "",
-        status: "Message Logged",
-        about: messageText
-      };
-
-      const resp = await axios.post(SHEETS_WEBHOOK, payload);
-      console.log("📤 Sent to Sheets:", resp.data);
-      await logToSheets("Telegram → Sheets", `Message ID: ${msg.message_id}`);
-
-    } catch (err) {
-      console.error("❌ Telegram message error:", err.message);
-      await logToSheets("Telegram Error", err.message);
+    // only process messages from the target group
+    if (
+      msg.chat.username !== "IndoorTriathlonRegistrations" &&
+      msg.chat.title !== "IndoorTriathlonRegistrations"
+    ) {
+      console.log("📭 Ignored (not target group)");
+      return res.sendStatus(200);
     }
-  });
-}
 
-// === /health endpoint ===
+    // send to Sheets
+    const payload = {
+      lastName: "Telegram",
+      firstName: "User",
+      email: "from.telegram@bot",
+      paymentId: "tg-" + msg.message_id,
+      amount: "",
+      status: "Message Logged",
+      about: msg.text
+    };
+
+    const resp = await axios.post(SHEETS_WEBHOOK, payload);
+    console.log("📤 Sent to Sheets:", resp.data);
+    await logToSheets("Telegram → Sheets", `Message ID: ${msg.message_id}`);
+
+    res.sendStatus(200);
+  } catch (err) {
+    console.error("❌ Webhook error:", err.message);
+    await logToSheets("Webhook Error", err.message);
+    res.sendStatus(500);
+  }
+});
+
+// === Health check ===
 app.get("/health", async (req, res) => {
   try {
     const ping = await axios.get(`${SHEETS_WEBHOOK}?healthcheck=true`);
-    console.log("✅ Healthcheck successful:", ping.data);
-    await logToSheets("Healthcheck", "Bot and Sheets are reachable");
-    res.json({ ok: true, sheets: ping.data });
+    console.log("✅ Healthcheck OK");
+    await logToSheets("Healthcheck", "Bot + Sheets OK");
+    res.json({ ok: true, ping: ping.data });
   } catch (err) {
     console.error("❌ Healthcheck failed:", err.message);
     await logToSheets("Healthcheck Error", err.message);
@@ -87,7 +97,7 @@ app.get("/health", async (req, res) => {
   }
 });
 
-// === /mock-register endpoint ===
+// === Mock register ===
 app.get("/mock-register", async (req, res) => {
   const mock = {
     lastName: "Иванов",
@@ -107,7 +117,7 @@ app.get("/mock-register", async (req, res) => {
   try {
     const resp = await axios.post(SHEETS_WEBHOOK, mock);
     console.log("📤 Mock sent:", resp.data);
-    await logToSheets("Mock Registration Sent", JSON.stringify(mock));
+    await logToSheets("Mock Registration", JSON.stringify(mock));
     res.json({ ok: true, data: resp.data });
   } catch (err) {
     console.error("❌ Mock error:", err.message);
@@ -116,14 +126,5 @@ app.get("/mock-register", async (req, res) => {
   }
 });
 
-// === Error handler ===
-app.use((err, req, res, next) => {
-  console.error("❌ Server error:", err.message);
-  logToSheets("Server Error", err.message);
-  res.status(500).json({ ok: false, error: err.message });
-});
-
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-});
+app.listen(PORT, () => console.log(`🚀 Server running on ${PORT}`));
