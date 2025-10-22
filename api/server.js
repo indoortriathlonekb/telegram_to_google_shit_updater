@@ -32,22 +32,23 @@ const webhookUrl = `${BASE_URL}${webhookPath}`;
   }
 })();
 
-// === Helper: Log to Google Sheets ===
+// === Helper: Log to Sheets ===
 async function logToSheets(step, details) {
   try {
-    await axios.post(SHEETS_WEBHOOK, {
-      lastName: "Bot",
-      firstName: "Logger",
-      email: "bot@system.local",
-      paymentId: `log-${Date.now()}`,
-      status: step,
-      about: details
-    });
-    console.log(`🧾 Logged to Sheets → ${step}: ${details}`);
+    const payload = {
+      action: "logStatus",
+      step,
+      details,
+    };
+
+    const resp = await axios.get(`${SHEETS_WEBHOOK}?action=logStatus&step=${encodeURIComponent(step)}&details=${encodeURIComponent(details)}`);
+
+    console.log(`🧾 Logged to Sheets via /logStatus → ${step}: ${details}`);
   } catch (err) {
     console.error("❌ logToSheets error:", err.message);
   }
 }
+
 
 // === Telegram Webhook Endpoint ===
 app.post(`/api/server/webhook/${TELEGRAM_BOT_TOKEN}`, async (req, res) => {
