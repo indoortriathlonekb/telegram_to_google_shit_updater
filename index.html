@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Indoor Triathlon Bot Status</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card: #1e293b;
+      --accent: #38bdf8;
+      --ok: #22c55e;
+      --error: #ef4444;
+    }
+    body {
+      font-family: system-ui, sans-serif;
+      background: var(--bg);
+      color: white;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+    }
+    .card {
+      background: var(--card);
+      padding: 2rem;
+      border-radius: 16px;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
+      max-width: 420px;
+      width: 90%;
+      text-align: center;
+      transition: 0.3s;
+    }
+    h1 {
+      font-size: 1.5rem;
+      margin-bottom: 1rem;
+      color: var(--accent);
+    }
+    .status {
+      font-size: 1.2rem;
+      margin-bottom: 1rem;
+    }
+    .status span {
+      font-weight: bold;
+    }
+    .log {
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 8px;
+      padding: 0.5rem;
+      margin: 0.3rem 0;
+      font-size: 0.9rem;
+      word-break: break-word;
+    }
+    button {
+      margin-top: 1rem;
+      background: var(--accent);
+      border: none;
+      padding: 0.6rem 1.2rem;
+      border-radius: 8px;
+      cursor: pointer;
+      color: #fff;
+      font-weight: bold;
+    }
+    button:hover {
+      background: #0ea5e9;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>🤖 Indoor Triathlon Bot Status</h1>
+    <div id="status" class="status">Checking...</div>
+    <div id="lastLog" class="log">Fetching recent logs...</div>
+    <button onclick="refresh()">🔄 Refresh</button>
+  </div>
+
+  <script>
+    async function refresh() {
+      const statusEl = document.getElementById("status");
+      const logEl = document.getElementById("lastLog");
+      statusEl.innerHTML = "⏳ Checking bot health...";
+      logEl.innerHTML = "Fetching logs...";
+
+      try {
+        // Call your Express health endpoint
+        const res = await fetch("/health");
+        const data = await res.json();
+
+        if (data.ok) {
+          statusEl.innerHTML = `✅ <span style="color: var(--ok)">Bot Active</span>`;
+          if (data.ping && data.ping.time) {
+            logEl.innerHTML = `🕓 Last sync: ${new Date().toLocaleString()}<br>📡 Sheets: ${JSON.stringify(data.ping)}`;
+          } else {
+            logEl.innerHTML = `📗 Sheets connected: ${JSON.stringify(data.ping || {})}`;
+          }
+        } else {
+          statusEl.innerHTML = `⚠️ <span style="color: var(--error)">Bot Error</span>`;
+          logEl.innerHTML = `Error: ${data.error || "Unknown error"}`;
+        }
+      } catch (err) {
+        statusEl.innerHTML = `❌ <span style="color: var(--error)">Bot Unreachable</span>`;
+        logEl.innerHTML = `Network error: ${err.message}`;
+      }
+    }
+
+    refresh();
+  </script>
+</body>
+</html>
