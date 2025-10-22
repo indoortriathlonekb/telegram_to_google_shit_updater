@@ -1,5 +1,12 @@
 {
   "version": 2,
-  "builds": [{ "src": "api/server.js", "use": "@vercel/node" }],
-  "routes": [{ "src": "/(.*)", "dest": "/api/server.js" }]
+  "builds": [
+    { "src": "api/server.js", "use": "@vercel/node" }
+  ],
+  "routes": [
+    { "src": "/health", "dest": "/api/server.js" },
+    { "src": "/mock-register", "dest": "/api/server.js" },
+    { "src": "/webhook/(.*)", "dest": "/api/server.js" },
+    { "src": "/(.*)", "dest": "/public/$1" }
+  ]
 }
