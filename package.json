@@ -1,14 +1,13 @@
 {
-  "name": "payments-proxy",
+  "name": "telegram-bot-server",
   "version": "1.0.0",
-  "description": "Telegram bot + Google Sheets integration for Indoor Triathlon",
   "type": "module",
   "scripts": {
     "start": "vercel dev"
   },
   "dependencies": {
-    "axios": "^1.7.2",
     "express": "^4.19.2",
-    "node-telegram-bot-api": "^0.66.0"
+    "axios": "^1.7.2",
+    "node-telegram-bot-api": "^0.64.0"
   }
 }
