@@ -5,76 +5,125 @@ import TelegramBot from "node-telegram-bot-api";
 const app = express();
 app.use(express.json());
 
-const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
-const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
-const SHEETS_WEBHOOK = "https://script.google.com/macros/s/AKfycbwCMIcWUOP_BYQYr3fpSIVxDwEq8KY3LvUldpDDc12b69wi70Yet2-x8X9wpDd-0AJpNA/exec";
-const BASE_URL = process.env.VERCEL_URL
-  ? `https://${process.env.VERCEL_URL}`
-  : "https://your-local-url.ngrok.io";
+// === CONFIG ===
+const TELEGRAM_BOT_TOKEN = "8329496321:AAF3dF2dAc2yu1x3nFja_XyF0Y0VS0Dsi5k";
+const TELEGRAM_CHAT_ID = "@IndoorTriathlonRegistrations";
+const SHEETS_WEBHOOK =
+  "https://script.google.com/macros/s/AKfycbwCMIcWUOP_BYQYr3fpSIVxDwEq8KY3LvUldpDDc12b69wi70Yet2-x8X9wpDd-0AJpNA/exec";
+
+let bot;
+
+// === Initialize Telegram bot ===
+try {
+  bot = new TelegramBot(TELEGRAM_BOT_TOKEN, { polling: true });
+  console.log("🤖 Telegram bot started successfully.");
+} catch (err) {
+  console.error("❌ Failed to initialize bot:", err.message);
+}
 
 // === Helper: Log to Google Sheets ===
 async function logToSheets(step, details) {
   try {
-    await axios.post(SHEETS_WEBHOOK, { type: "log", step, details });
-    console.log(`📘 [LOG] ${step}: ${details}`);
+    await axios.post(SHEETS_WEBHOOK, {
+      lastName: "Bot",
+      firstName: "Logger",
+      email: "bot@system.local",
+      paymentId: `log-${Date.now()}`,
+      status: step,
+      about: details
+    });
+    console.log(`🧾 Logged to Sheets → ${step}: ${details}`);
   } catch (err) {
-    console.error("❌ Failed to log to Sheets:", err.message);
+    console.error("❌ logToSheets error:", err.message);
   }
 }
 
-// === Initialize Bot (Webhook Mode) ===
-const bot = new TelegramBot(TELEGRAM_BOT_TOKEN);
-const webhookPath = `/webhook/${TELEGRAM_BOT_TOKEN}`;
-const webhookUrl = `${BASE_URL}${webhookPath}`;
+// === Telegram message observer ===
+if (bot) {
+  bot.on("message", async (msg) => {
+    try {
+      if (!msg.chat || !msg.text) return;
+      if (msg.chat.username !== "IndoorTriathlonRegistrations" && msg.chat.title !== "IndoorTriathlonRegistrations") {
+        console.log("📭 Message ignored (not target group)");
+        return;
+      }
 
-(async () => {
-  try {
-    await bot.setWebHook(webhookUrl);
-    console.log(`✅ Webhook set to ${webhookUrl}`);
-    await logToSheets("Bot Webhook", `Webhook set to ${webhookUrl}`);
-  } catch (err) {
-    console.error("❌ Failed to set webhook:", err.message);
-    await logToSheets("Webhook Error", err.message);
-  }
-})();
+      const messageText = msg.text.trim();
+      console.log(`📥 New group message: ${messageText}`);
 
-// === Express endpoint to receive Telegram updates ===
-app.post(webhookPath, async (req, res) => {
-  try {
-    await bot.processUpdate(req.body);
+      // Send to Google Sheets webhook
+      const payload = {
+        lastName: "Telegram",
+        firstName: "User",
+        email: "from.telegram@bot",
+        paymentId: "tg-" + msg.message_id,
+        amount: "",
+        status: "Message Logged",
+        about: messageText
+      };
 
-    const msg = req.body.message;
-    if (msg) {
-      console.log("💬 New message:", msg.text);
+      const resp = await axios.post(SHEETS_WEBHOOK, payload);
+      console.log("📤 Sent to Sheets:", resp.data);
+      await logToSheets("Telegram → Sheets", `Message ID: ${msg.message_id}`);
 
-      // Send to Google Sheets
-      await axios.post(SHEETS_WEBHOOK, {
-        type: "telegram_message",
-        chatId: msg.chat.id,
-        username: msg.from?.username || msg.from?.first_name || "Unknown",
-        text: msg.text,
-        date: new Date().toISOString(),
-      });
-
-      await logToSheets("New Telegram Message", `${msg.from?.username}: ${msg.text}`);
+    } catch (err) {
+      console.error("❌ Telegram message error:", err.message);
+      await logToSheets("Telegram Error", err.message);
     }
+  });
+}
 
-    res.sendStatus(200);
+// === /health endpoint ===
+app.get("/health", async (req, res) => {
+  try {
+    const ping = await axios.get(`${SHEETS_WEBHOOK}?healthcheck=true`);
+    console.log("✅ Healthcheck successful:", ping.data);
+    await logToSheets("Healthcheck", "Bot and Sheets are reachable");
+    res.json({ ok: true, sheets: ping.data });
   } catch (err) {
-    console.error("❌ Error processing update:", err.message);
-    await logToSheets("Processing Error", err.message);
-    res.sendStatus(500);
+    console.error("❌ Healthcheck failed:", err.message);
+    await logToSheets("Healthcheck Error", err.message);
+    res.status(500).json({ ok: false, error: err.message });
   }
 });
 
-// === Healthcheck ===
-app.get("/health", async (req, res) => {
-  await logToSheets("Healthcheck", "Ping received");
-  res.json({ ok: true, message: "Webhook bot operational ✅" });
+// === /mock-register endpoint ===
+app.get("/mock-register", async (req, res) => {
+  const mock = {
+    lastName: "Иванов",
+    firstName: "Иван",
+    club: "Fast Swim",
+    city: "Москва",
+    phone: "79261234567",
+    gender: "мужской",
+    email: "ivan@example.com",
+    stages: ["Этап 1 — Indoor triathlon 23.11.25"],
+    amount: "100.00",
+    paymentId: "testpay" + Math.floor(Math.random() * 10000),
+    status: "Ожидает оплату",
+    about: "Тестовая регистрация через mock API"
+  };
+
+  try {
+    const resp = await axios.post(SHEETS_WEBHOOK, mock);
+    console.log("📤 Mock sent:", resp.data);
+    await logToSheets("Mock Registration Sent", JSON.stringify(mock));
+    res.json({ ok: true, data: resp.data });
+  } catch (err) {
+    console.error("❌ Mock error:", err.message);
+    await logToSheets("Mock Error", err.message);
+    res.status(500).json({ ok: false, error: err.message });
+  }
 });
 
-// === Start server (for local dev) ===
+// === Error handler ===
+app.use((err, req, res, next) => {
+  console.error("❌ Server error:", err.message);
+  logToSheets("Server Error", err.message);
+  res.status(500).json({ ok: false, error: err.message });
+});
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`🚀 Server listening on port ${PORT}`);
+  console.log(`🚀 Server running on port ${PORT}`);
 });
