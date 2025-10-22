@@ -2,16 +2,6 @@ import express from "express";
 import axios from "axios";
 import TelegramBot from "node-telegram-bot-api";
 
-import express from "express";
-import path from "path";
-import { fileURLToPath } from "url";
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-app.use(express.static(path.join(__dirname, "public")));
-
-
 const app = express();
 app.use(express.json());
 
@@ -21,22 +11,28 @@ const TELEGRAM_CHAT_ID = "@IndoorTriathlonRegistrations";
 const SHEETS_WEBHOOK =
   "https://script.google.com/macros/s/AKfycbwCMIcWUOP_BYQYr3fpSIVxDwEq8KY3LvUldpDDc12b69wi70Yet2-x8X9wpDd-0AJpNA/exec";
 
+// Determine public base URL (Vercel sets this env automatically)
 const BASE_URL = process.env.VERCEL_URL
   ? `https://${process.env.VERCEL_URL}`
-  : "https://your-vercel-app.vercel.app"; // replace locally if testing
+  : "http://localhost:3000";
 
+// === Telegram Bot Setup ===
 const bot = new TelegramBot(TELEGRAM_BOT_TOKEN, { webHook: true });
-const webhookUrl = `${BASE_URL}/webhook/${TELEGRAM_BOT_TOKEN}`;
+const webhookPath = `/api/server/webhook/${TELEGRAM_BOT_TOKEN}`;
+const webhookUrl = `${BASE_URL}${webhookPath}`;
 
-// === Register webhook with Telegram ===
-try {
-  await bot.setWebHook(webhookUrl);
-  console.log(`🤖 Telegram bot webhook set to: ${webhookUrl}`);
-} catch (err) {
-  console.error("❌ Failed to set webhook:", err.message);
-}
+(async () => {
+  try {
+    await bot.setWebHook(webhookUrl);
+    console.log(`🤖 Telegram bot webhook set to: ${webhookUrl}`);
+    await logToSheets("Bot Startup", `Webhook set: ${webhookUrl}`);
+  } catch (err) {
+    console.error("❌ Failed to set webhook:", err.message);
+    await logToSheets("Startup Error", err.message);
+  }
+})();
 
-// === Helper: Log to Sheets ===
+// === Helper: Log to Google Sheets ===
 async function logToSheets(step, details) {
   try {
     await axios.post(SHEETS_WEBHOOK, {
@@ -53,15 +49,15 @@ async function logToSheets(step, details) {
   }
 }
 
-// === Webhook endpoint for Telegram updates ===
-app.post(`/webhook/${TELEGRAM_BOT_TOKEN}`, async (req, res) => {
+// === Telegram Webhook Endpoint ===
+app.post(`/api/server/webhook/${TELEGRAM_BOT_TOKEN}`, async (req, res) => {
   try {
     const msg = req.body.message;
     if (!msg || !msg.text) return res.sendStatus(200);
 
     console.log("📥 Telegram message:", msg.text);
 
-    // only process messages from the target group
+    // Only track messages from your group
     if (
       msg.chat.username !== "IndoorTriathlonRegistrations" &&
       msg.chat.title !== "IndoorTriathlonRegistrations"
@@ -70,7 +66,6 @@ app.post(`/webhook/${TELEGRAM_BOT_TOKEN}`, async (req, res) => {
       return res.sendStatus(200);
     }
 
-    // send to Sheets
     const payload = {
       lastName: "Telegram",
       firstName: "User",
@@ -93,13 +88,13 @@ app.post(`/webhook/${TELEGRAM_BOT_TOKEN}`, async (req, res) => {
   }
 });
 
-// === Health check ===
-app.get("/health", async (req, res) => {
+// === Healthcheck Route ===
+app.get("/api/server/health", async (req, res) => {
   try {
     const ping = await axios.get(`${SHEETS_WEBHOOK}?healthcheck=true`);
     console.log("✅ Healthcheck OK");
     await logToSheets("Healthcheck", "Bot + Sheets OK");
-    res.json({ ok: true, ping: ping.data });
+    res.json({ ok: true, ping: ping.data, time: new Date().toISOString() });
   } catch (err) {
     console.error("❌ Healthcheck failed:", err.message);
     await logToSheets("Healthcheck Error", err.message);
@@ -107,8 +102,8 @@ app.get("/health", async (req, res) => {
   }
 });
 
-// === Mock register ===
-app.get("/mock-register", async (req, res) => {
+// === Mock Registration (for testing) ===
+app.get("/api/server/mock-register", async (req, res) => {
   const mock = {
     lastName: "Иванов",
     firstName: "Иван",
@@ -136,5 +131,5 @@ app.get("/mock-register", async (req, res) => {
   }
 });
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`🚀 Server running on ${PORT}`));
+// ✅ Export for Vercel
+export default app;
