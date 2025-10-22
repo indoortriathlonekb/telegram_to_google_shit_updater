@@ -1,64 +1,62 @@
 import express from "express";
+import path from "path";
+import { fileURLToPath } from "url";
 import axios from "axios";
 import TelegramBot from "node-telegram-bot-api";
 
-const app = express();
-app.use(express.json());
+// === PATH SETUP ===
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // === CONFIG ===
 const TELEGRAM_BOT_TOKEN = "8329496321:AAF3dF2dAc2yu1x3nFja_XyF0Y0VS0Dsi5k";
 const TELEGRAM_CHAT_ID = "@IndoorTriathlonRegistrations";
 const SHEETS_WEBHOOK =
-  "https://script.google.com/macros/s/AKfycbzw7grAXjMsULrBjRn-1m81cSCVQA7FIbYDoaCmbObQ-EuH04NMFfqE2eyBD4k_aH7piQ/exec";
+  "https://script.google.com/macros/s/AKfycbwCMIcWUOP_BYQYr3fpSIVxDwEq8KY3LvUldpDDc12b69wi70Yet2-x8X9wpDd-0AJpNA/exec";
 
-// Determine public base URL (Vercel sets this env automatically)
 const BASE_URL = process.env.VERCEL_URL
   ? `https://${process.env.VERCEL_URL}`
-  : "http://localhost:3000";
+  : "https://your-vercel-app.vercel.app"; // replace with your real URL when testing locally
 
-// === Telegram Bot Setup ===
+// === EXPRESS APP ===
+const app = express();
+app.use(express.json());
+app.use(express.static(path.join(__dirname, "public")));
+
+// === TELEGRAM BOT ===
 const bot = new TelegramBot(TELEGRAM_BOT_TOKEN, { webHook: true });
-const webhookPath = `/api/server/webhook/${TELEGRAM_BOT_TOKEN}`;
-const webhookUrl = `${BASE_URL}${webhookPath}`;
+const webhookUrl = `${BASE_URL}/webhook/${TELEGRAM_BOT_TOKEN}`;
 
-(async () => {
-  try {
-    await bot.setWebHook(webhookUrl);
-    console.log(`🤖 Telegram bot webhook set to: ${webhookUrl}`);
-    await logToSheets("Bot Startup", `Webhook set: ${webhookUrl}`);
-  } catch (err) {
-    console.error("❌ Failed to set webhook:", err.message);
-    await logToSheets("Startup Error", err.message);
-  }
-})();
+try {
+  await bot.setWebHook(webhookUrl);
+  console.log(`🤖 Telegram bot webhook set to: ${webhookUrl}`);
+} catch (err) {
+  console.error("❌ Failed to set webhook:", err.message);
+}
 
-// === Helper: Log to Sheets ===
+// === Helper: Log to Sheets using /logStatus ===
 async function logToSheets(step, details) {
   try {
-    const payload = {
+    const resp = await axios.post(SHEETS_WEBHOOK, {
       action: "logStatus",
       step,
       details,
-    };
-
-    const resp = await axios.get(`${SHEETS_WEBHOOK}?action=logStatus&step=${encodeURIComponent(step)}&details=${encodeURIComponent(details)}`);
-
+    });
     console.log(`🧾 Logged to Sheets via /logStatus → ${step}: ${details}`);
   } catch (err) {
     console.error("❌ logToSheets error:", err.message);
   }
 }
 
-
-// === Telegram Webhook Endpoint ===
-app.post(`/api/server/webhook/${TELEGRAM_BOT_TOKEN}`, async (req, res) => {
+// === TELEGRAM WEBHOOK HANDLER ===
+app.post(`/webhook/${TELEGRAM_BOT_TOKEN}`, async (req, res) => {
   try {
     const msg = req.body.message;
     if (!msg || !msg.text) return res.sendStatus(200);
 
     console.log("📥 Telegram message:", msg.text);
 
-    // Only track messages from your group
+    // only process messages from target group
     if (
       msg.chat.username !== "IndoorTriathlonRegistrations" &&
       msg.chat.title !== "IndoorTriathlonRegistrations"
@@ -72,9 +70,8 @@ app.post(`/api/server/webhook/${TELEGRAM_BOT_TOKEN}`, async (req, res) => {
       firstName: "User",
       email: "from.telegram@bot",
       paymentId: "tg-" + msg.message_id,
-      amount: "",
       status: "Message Logged",
-      about: msg.text
+      about: msg.text,
     };
 
     const resp = await axios.post(SHEETS_WEBHOOK, payload);
@@ -89,13 +86,13 @@ app.post(`/api/server/webhook/${TELEGRAM_BOT_TOKEN}`, async (req, res) => {
   }
 });
 
-// === Healthcheck Route ===
-app.get("/api/server/health", async (req, res) => {
+// === HEALTH CHECK ===
+app.get("/health", async (req, res) => {
   try {
     const ping = await axios.get(`${SHEETS_WEBHOOK}?healthcheck=true`);
     console.log("✅ Healthcheck OK");
     await logToSheets("Healthcheck", "Bot + Sheets OK");
-    res.json({ ok: true, ping: ping.data, time: new Date().toISOString() });
+    res.json({ ok: true, ping: ping.data });
   } catch (err) {
     console.error("❌ Healthcheck failed:", err.message);
     await logToSheets("Healthcheck Error", err.message);
@@ -103,8 +100,8 @@ app.get("/api/server/health", async (req, res) => {
   }
 });
 
-// === Mock Registration (for testing) ===
-app.get("/api/server/mock-register", async (req, res) => {
+// === MOCK REGISTRATION ===
+app.get("/mock-register", async (req, res) => {
   const mock = {
     lastName: "Иванов",
     firstName: "Иван",
@@ -117,7 +114,7 @@ app.get("/api/server/mock-register", async (req, res) => {
     amount: "100.00",
     paymentId: "testpay" + Math.floor(Math.random() * 10000),
     status: "Ожидает оплату",
-    about: "Тестовая регистрация через mock API"
+    about: "Тестовая регистрация через mock API",
   };
 
   try {
@@ -132,5 +129,6 @@ app.get("/api/server/mock-register", async (req, res) => {
   }
 });
 
-// ✅ Export for Vercel
-export default app;
+// === START SERVER ===
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
